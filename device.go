@@ -13,11 +13,15 @@ type Device struct {
 	mu     sync.RWMutex
 	port   io.ReadWriter
 	parser Parser
-	fix    Fix
 
 	life    sync.Mutex
 	stop    chan struct{}
 	running bool
+
+	// cmd is reused by SetWorkMode so the one-shot command does not allocate
+	// a fresh buffer on the heap.
+	cmdMu sync.Mutex
+	cmd   [24]byte
 }
 
 // New returns a Device reading from port.
@@ -54,7 +58,7 @@ func (d *Device) Stop() {
 // Fix returns a copy of the latest decoded state.
 func (d *Device) Fix() Fix {
 	d.mu.RLock()
-	f := d.fix
+	f := d.parser.fix
 	d.mu.RUnlock()
 	return f
 }
@@ -73,10 +77,7 @@ func (d *Device) loop(stop chan struct{}) {
 		if m > 0 {
 			for _, b := range chunk[:m] {
 				if b == '\n' {
-					d.mu.Lock()
-					d.parser.Feed(line[:n])
-					d.fix = d.parser.fix
-					d.mu.Unlock()
+					d.consume(line[:n])
 					n = 0
 				} else if n < len(line) {
 					line[n] = b
@@ -92,9 +93,19 @@ func (d *Device) loop(stop chan struct{}) {
 	}
 }
 
+// consume parses one sentence. Fix reads the parser state under the lock, so
+// there is no need to copy the whole Fix for every sentence.
+func (d *Device) consume(line []byte) {
+	d.mu.Lock()
+	d.parser.Feed(line)
+	d.mu.Unlock()
+}
+
 // SetWorkMode sends the CASIC $PCAS04 command (for example mode 7).
 func (d *Device) SetWorkMode(mode uint8) error {
-	var b [24]byte
+	d.cmdMu.Lock()
+	defer d.cmdMu.Unlock()
+	b := &d.cmd
 	n := copy(b[:], "$PCAS04,")
 	n += appendUint(b[n:], int(mode))
 	b[n] = '*'

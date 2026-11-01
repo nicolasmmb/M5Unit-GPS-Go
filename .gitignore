@@ -3,3 +3,7 @@
 *.map
 .vscode/
 .idea/
+bench/*.txt
+bench/*.prof
+bench/*.cpu
+bench/*.mem

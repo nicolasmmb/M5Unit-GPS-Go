@@ -73,15 +73,34 @@ for {
 
 ## Performance
 
-`Feed` is allocation-free for GGA/RMC. The only allocation is the antenna
-string, produced by the rare TXT sentence that changes the antenna state.
+Zero heap allocations in steady state: `Feed` never touches the heap for
+GGA/RMC/GSV/TXT, and the antenna string is only built when the state actually
+changes (normally once, at boot).
+
+Benchmarks use `testdata/cycle.nmea`, **one second of NMEA captured from real
+hardware** (13 sentences, GPS + GLONASS + BeiDou):
 
 ```bash
-make bench
-# BenchmarkFeedRMC-...  0 B/op  0 allocs/op
+make bench          # all benchmarks with alloc stats
+make alloc          # asserts 0 allocs per cycle + RAM footprint
+make bench-save NAME=before
+make bench-save NAME=after && make bench-compare FROM=before TO=after
+make profile        # CPU/alloc profiles (pprof)
 ```
 
-The test suite asserts `testing.AllocsPerRun` == 0 per sentence.
+| Benchmark | Result (Apple M2 Pro) |
+|---|---:|
+| `FeedCycle` (1 s of traffic) | **1.57 µs/op, 0 B, 0 allocs** |
+| `DeviceCycle` (mutex + parse + publish) | **1.66 µs/op, 0 B, 0 allocs** |
+| `Feed/GGA` / `RMC` / `GSV` / `TXT` | 273 / 316 / 208 / 53 ns |
+| `Fix` | 2.5 ns/op |
+| `Parser` / `Device` size | **160 B / 256 B** |
+
+See [BENCHMARKS.md](BENCHMARKS.md) for the method and the before/after
+(`benchstat`) of the v0.3.1 allocation work.
+
+The test suite asserts `testing.AllocsPerRun` == 0 per sentence and per full
+cycle, and fails if `Parser`/`Device` exceed their RAM budget.
 
 ## References
 

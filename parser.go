@@ -49,9 +49,11 @@ type Parser struct {
 const maxTalkers = 6
 
 // gsvState accumulates the GSV cycle of one constellation (GP, GL, BD, ...).
+// Counts fit in a byte (a receiver reports at most 99 satellites/dB), which
+// keeps the six slots at 18 bytes instead of 144.
 type gsvState struct {
-	total int
-	best  int
+	total uint8
+	best  uint8
 	seen  bool
 }
 
@@ -167,12 +169,12 @@ func (p *Parser) decodeGSV(line []byte) {
 		slot.total = 0
 		slot.best = 0
 	}
-	if total, ok := parseInt(field(line, 3)); ok {
-		slot.total = total
+	if total, ok := parseInt(field(line, 3)); ok && total <= 255 {
+		slot.total = uint8(total)
 	}
 	for base := 4; base <= 16; base += 4 {
-		if snr, ok := parseInt(field(line, base+3)); ok && snr > slot.best {
-			slot.best = snr
+		if snr, ok := parseInt(field(line, base+3)); ok && snr <= 255 && snr > int(slot.best) {
+			slot.best = uint8(snr)
 		}
 	}
 
@@ -182,9 +184,9 @@ func (p *Parser) decodeGSV(line []byte) {
 		if !p.gsv[i].seen {
 			continue
 		}
-		view += p.gsv[i].total
-		if p.gsv[i].best > best {
-			best = p.gsv[i].best
+		view += int(p.gsv[i].total)
+		if b := int(p.gsv[i].best); b > best {
+			best = b
 		}
 	}
 	p.fix.SatsInView = view
@@ -221,7 +223,25 @@ func (p *Parser) decodeTXT(line []byte) {
 	for len(state) > 0 && state[0] == ' ' {
 		state = state[1:]
 	}
-	p.fix.Antenna = string(state) // rare sentence: only allocation in the parser
+	// The module repeats TXT every second. Compare against the current string
+	// without converting, so only an actual change allocates.
+	if sameBytes(p.fix.Antenna, state) {
+		return
+	}
+	p.fix.Antenna = string(state)
+}
+
+// sameBytes reports whether s and b hold the same bytes, without allocating.
+func sameBytes(s string, b []byte) bool {
+	if len(s) != len(b) {
+		return false
+	}
+	for i := 0; i < len(b); i++ {
+		if s[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // --- helpers ---
