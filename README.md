@@ -8,7 +8,7 @@ Pure-Go NMEA 0183 parser and reader for the **M5Stack Unit GPS v1.1**
 ## Features
 
 - GGA (quality, satellites, altitude), RMC (UTC, latitude/longitude, speed,
-  course) and TXT (antenna state).
+  course), GSV (satellites in view and best SNR) and TXT (antenna state).
 - NMEA checksum validation and talker-independent parsing (`GP/GN/BD/GL/GA`).
 - **Zero heap allocations per sentence**: fixed line buffer, in-place field
   scanning and hand-written number parsing.
@@ -68,8 +68,8 @@ for {
 | `Parser.Feed(line)` | Parse one sentence (host friendly) |
 
 `Fix` fields: `Valid`, `Latitude`, `Longitude`, `Altitude`, `Satellites`,
-`Quality`, `SpeedKnots`, `Course`, `UTC`, `Antenna`, `Sentences`,
-`ChecksumErrors`.
+`Quality`, `SatsInView`, `BestSNR`, `SpeedKnots`, `Course`, `UTC`, `Antenna`,
+`Sentences`, `ChecksumErrors`.
 
 ## Performance
 

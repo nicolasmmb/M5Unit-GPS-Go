@@ -57,6 +57,24 @@ func TestGGA(t *testing.T) {
 	}
 }
 
+func TestGSV(t *testing.T) {
+	line := withChecksum("GPGSV,3,1,11,05,25,047,22,13,20,123,23,15,15,089,20,12,10,045,18")
+	var p Parser
+	if !p.Feed(line) {
+		t.Fatal("GSV not parsed")
+	}
+	f := p.Fix()
+	if f.SatsInView != 11 || f.BestSNR != 23 {
+		t.Fatalf("GSV = view %d snr %d, want 11/23", f.SatsInView, f.BestSNR)
+	}
+	// A second cycle starts at message 1 and resets the best SNR.
+	line2 := withChecksum("GPGSV,3,1,11,05,25,047,10")
+	p.Feed(line2)
+	if p.Fix().BestSNR != 10 {
+		t.Fatalf("BestSNR = %d, want 10", p.Fix().BestSNR)
+	}
+}
+
 func TestTXT(t *testing.T) {
 	line := withChecksum("GNTXT,01,01,02,ANTENNA OK")
 	var p Parser
@@ -105,7 +123,11 @@ func TestNoAllocPerSentence(t *testing.T) {
 	line := withChecksum("GNRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W")
 	var p Parser
 	p.Feed(line)
-	allocs := testing.AllocsPerRun(1000, func() { p.Feed(line) })
+	gsv := withChecksum("GPGSV,3,1,11,05,25,047,22,13,20,123,23,15,15,089,20,12,10,045,18")
+	allocs := testing.AllocsPerRun(1000, func() {
+		p.Feed(line)
+		p.Feed(gsv)
+	})
 	if allocs != 0 {
 		t.Fatalf("Feed allocates %v per sentence, want 0", allocs)
 	}

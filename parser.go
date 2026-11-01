@@ -21,6 +21,11 @@ type Fix struct {
 	Satellites int
 	Quality    int // GGA fix quality (0 = no fix)
 
+	// SatsInView and BestSNR come from GSV, so they are available before the
+	// first fix and help diagnose antenna placement.
+	SatsInView int
+	BestSNR    int
+
 	SpeedKnots float64
 	Course     float64 // degrees
 
@@ -75,6 +80,8 @@ func (p *Parser) Feed(line []byte) bool {
 		p.decodeGGA(line)
 	case typeIs(typ, "RMC"):
 		p.decodeRMC(line)
+	case typeIs(typ, "GSV"):
+		p.decodeGSV(line)
 	case typeIs(typ, "TXT"):
 		p.decodeTXT(line)
 	}
@@ -132,6 +139,23 @@ func (p *Parser) decodeRMC(line []byte) {
 	if okClock && okDate {
 		p.fix.UTC = time.Date(year, time.Month(month), day, h, m, s, ns, time.UTC)
 	}
+}
+
+func (p *Parser) decodeGSV(line []byte) {
+	if total, ok := parseInt(field(line, 3)); ok {
+		p.fix.SatsInView = total
+	}
+	// A new GSV cycle starts at message 1; reset the best SNR for the cycle.
+	if msg, ok := parseInt(field(line, 2)); ok && msg == 1 {
+		p.fix.BestSNR = 0
+	}
+	best := p.fix.BestSNR
+	for base := 4; base <= 16; base += 4 {
+		if snr, ok := parseInt(field(line, base+3)); ok && snr > best {
+			best = snr
+		}
+	}
+	p.fix.BestSNR = best
 }
 
 func (p *Parser) decodeTXT(line []byte) {
