@@ -68,6 +68,8 @@ func (p *Parser) Feed(line []byte) bool {
 		return false
 	}
 
+	// Drop the trailing checksum so the last field is not polluted by "*XX".
+	line = line[:star]
 	p.fix.Sentences++
 
 	f0 := field(line, 0)
