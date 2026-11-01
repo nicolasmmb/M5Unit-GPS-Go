@@ -43,6 +43,16 @@ type Fix struct {
 // Device serializes access.
 type Parser struct {
 	fix Fix
+	gsv [maxTalkers]gsvState
+}
+
+const maxTalkers = 6
+
+// gsvState accumulates the GSV cycle of one constellation (GP, GL, BD, ...).
+type gsvState struct {
+	total int
+	best  int
+	seen  bool
 }
 
 // Fix returns a copy of the current state.
@@ -144,20 +154,59 @@ func (p *Parser) decodeRMC(line []byte) {
 }
 
 func (p *Parser) decodeGSV(line []byte) {
-	if total, ok := parseInt(field(line, 3)); ok {
-		p.fix.SatsInView = total
+	f0 := field(line, 0)
+	if len(f0) < 3 {
+		return
 	}
-	// A new GSV cycle starts at message 1; reset the best SNR for the cycle.
+	slot := &p.gsv[talkerIndex(f0[1], f0[2])]
+	slot.seen = true
+
+	// Each constellation sends its own GSV sequence starting at message 1,
+	// so a new cycle resets only that constellation's totals.
 	if msg, ok := parseInt(field(line, 2)); ok && msg == 1 {
-		p.fix.BestSNR = 0
+		slot.total = 0
+		slot.best = 0
 	}
-	best := p.fix.BestSNR
+	if total, ok := parseInt(field(line, 3)); ok {
+		slot.total = total
+	}
 	for base := 4; base <= 16; base += 4 {
-		if snr, ok := parseInt(field(line, base+3)); ok && snr > best {
-			best = snr
+		if snr, ok := parseInt(field(line, base+3)); ok && snr > slot.best {
+			slot.best = snr
 		}
 	}
+
+	// Aggregate the constellations into the single snapshot.
+	view, best := 0, 0
+	for i := range p.gsv {
+		if !p.gsv[i].seen {
+			continue
+		}
+		view += p.gsv[i].total
+		if p.gsv[i].best > best {
+			best = p.gsv[i].best
+		}
+	}
+	p.fix.SatsInView = view
 	p.fix.BestSNR = best
+}
+
+// talkerIndex maps a two-letter talker (GP, GL, BD, GA, GQ, GN) to a slot.
+func talkerIndex(a, b byte) int {
+	switch {
+	case a == 'G' && b == 'P':
+		return 0
+	case a == 'G' && b == 'L':
+		return 1
+	case b == 'D': // BD/GB
+		return 2
+	case a == 'G' && b == 'A':
+		return 3
+	case a == 'G' && b == 'Q':
+		return 4
+	default:
+		return 5
+	}
 }
 
 func (p *Parser) decodeTXT(line []byte) {

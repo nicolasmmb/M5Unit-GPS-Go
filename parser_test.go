@@ -75,6 +75,35 @@ func TestGSV(t *testing.T) {
 	}
 }
 
+func TestGSVMultiTalker(t *testing.T) {
+	// GP (7), GL (2) and BD (1) are aggregated into one in-view count; the
+	// best SNR is the maximum across constellations.
+	lines := [][]byte{
+		withChecksum("GPGSV,2,1,07,08,46,268,19,10,26,133,11,16,02,342,20,27,49,329,12,1"),
+		withChecksum("GPGSV,2,2,07,28,33,053,25"),
+		withChecksum("GLGSV,1,1,02,81,28,042,23,82,71,087,29"),
+		withChecksum("BDGSV,1,1,01,20,,,27"),
+	}
+	var p Parser
+	for _, l := range lines {
+		if !p.Feed(l) {
+			t.Fatalf("not parsed: %s", l)
+		}
+	}
+	f := p.Fix()
+	if f.SatsInView != 10 {
+		t.Fatalf("SatsInView = %d, want 10", f.SatsInView)
+	}
+	if f.BestSNR != 29 {
+		t.Fatalf("BestSNR = %d, want 29", f.BestSNR)
+	}
+	// A new GP cycle resets only GP: 4 + GL 2 + BD 1.
+	p.Feed(withChecksum("GPGSV,1,1,04,08,46,268,15"))
+	if f := p.Fix(); f.SatsInView != 7 || f.BestSNR != 29 {
+		t.Fatalf("after GP reset = view %d snr %d, want 7/29", f.SatsInView, f.BestSNR)
+	}
+}
+
 func TestTXT(t *testing.T) {
 	line := withChecksum("GNTXT,01,01,02,ANTENNA OK")
 	var p Parser
